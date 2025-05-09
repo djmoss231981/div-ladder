@@ -119,19 +119,50 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
                     tp = get_price(tk)
                     new[tk] += (part/tp if frac else part//tp)
 
+            # --- Compute Market Value & Capital Gains ---
+            market_value = s * price
+            prev_mv = current_metrics[t].get("last_market_value", initial_costs[t])  # see below
+            cap_gain = market_value - prev_mv
+            cumulative_cap[t] += cap_gain
+          
             # record metrics
-            row[f"{t}_Holdings"]       = s
-            row[f"{t}_Price"]          = price
-            row[f"{t}_MarketValue"]    = s * price
-            row[f"{t}_Earned"]         = earned
-            row[f"{t}_Cascaded"]       = cascaded
-            row[f"{t}_CumulativeDivs"] = cumulative[t]
+            row[f"{t}_MarketValue"]     = market_value
+            row[f"{t}_CapGain"]         = cap_gain                     
+            row[f"{t}_CumulativeCap"]   = cumulative_cap[t]            
+            row[f"{t}_Earned"]          = earned
+            row[f"{t}_Cascaded"]        = cascaded
+            row[f"{t}_CumulativeDivs"]  = cumulative[t]
+            row[f"{t}_Holdings"]        = s
+            row[f"{t}_Price"]           = price
+
+            # Compute each security’s initial cost (share count × initial price)
+            initial_costs = {
+                t: holdings[i] * get_price(t)
+                for i, t in enumerate(tickers)
+            }
+            # Track last market value per security (start at initial cost)
+            current_metrics = {
+                t: {"last_market_value": initial_costs[t]}
+                for t in tickers
+            }
+            # Cumulative capital gains
+            cumulative_cap = {t: 0.0 for t in tickers}
+
+            # Update last_market_value for next iteration
+            for t in tickers:
+                current_metrics[t]["last_market_value"] = row[f"{t}_MarketValue"]
+
 
         records.append(row)
         current = new
 
     df = pd.DataFrame(records, index=dates)
     df.index.name = "Date" if historical else f"{freq} Step"
+    
+    # Portfolio Capital Gains
+    df["Total CapGain"]       = df.filter(like="_CapGain").sum(axis=1)
+    df["Total CumulativeCap"] = df.filter(like="_CumulativeCap").sum(axis=1)
+
     return df
 
 def simulate_forward(tickers, holdings, periods, freq, cascade, frac, last_handling):
@@ -232,6 +263,9 @@ with tab1:
 
         st.subheader("Total Portfolio Value Curve")
         st.line_chart(df["Total Portfolio Value"])
+
+        st.subheader("Portfolio Capital Gains Over Time")
+        st.line_chart(df[["Total CapGain", "Total CumulativeCap"]])
 
         st.subheader("Per-Security Breakdown")
         for t in tickers:
