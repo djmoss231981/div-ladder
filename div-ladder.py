@@ -201,12 +201,14 @@ with tab1:
             cascade.append(pct)
 
         last_hand = st.selectbox("Last Security Dividend Handling",
-                                 ["Reinvest in itself","Distribute equally across chain"])
+                                 ["Reinvest in itself","Distribute equally across chain"]
+        )
         freq = st.selectbox("Frequency", ['Weekly','Monthly','Quarterly','Semi-Annual','Annually'])
         yrs  = st.number_input("Years to Simulate", 1, 30, 5)
         frac = st.checkbox("Allow Fractional Shares", True)
         pub  = st.checkbox("Make Model Public")
         mode = st.radio("Mode", ["Forward Projection","Historical Backtest"])
+
         go   = st.form_submit_button("Run Simulation")
 
     if go:
@@ -220,13 +222,21 @@ with tab1:
         # Portfolio totals
         df["Total Market Value"]    = df.filter(like="_MarketValue").sum(axis=1)
         df["Total Cumulative Divs"] = df.filter(like="_CumulativeDivs").sum(axis=1)
+        df["Total Portfolio Value"] = df["Total Market Value"] + df["Total Cumulative Divs"]
+
         st.subheader("Portfolio Totals Over Time")
         st.line_chart(df[["Total Market Value","Total Cumulative Divs"]])
+
+        st.subheader("Compounding Growth Over Time")
+        st.area_chart(df[["Total Market Value","Total Cumulative Divs"]])
+
+        st.subheader("Total Portfolio Value Curve")
+        st.line_chart(df["Total Portfolio Value"])
 
         st.subheader("Per-Security Breakdown")
         for t in tickers:
             with st.expander(t):
-                cols = [f"{t}_{m}" for m in ["Holdings","Cost","Earned","Cascaded","MarketValue","CumulativeDivs"]]
+                cols = [f"{t}_{m}" for m in ["Holdings","Cost","Price","MarketValue","Earned","Cascaded","CumulativeDivs"]]
                 st.dataframe(df[cols])
 
         if name:
@@ -256,7 +266,7 @@ with tab2:
             st.dataframe(df)
             for t in data["tickers"]:
                 with st.expander(t):
-                    cols = [f"{t}_{m}" for m in ["Holdings","Cost","Earned","Cascaded","MarketValue","CumulativeDivs"]]
+                    cols = [f"{t}_{m}" for m in ["Holdings","Cost","Price","MarketValue","Earned","Cascaded","CumulativeDivs"]]
                     st.dataframe(df[cols])
     else:
         st.info("No models yet.")
