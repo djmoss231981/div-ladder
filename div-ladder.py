@@ -34,7 +34,7 @@ def get_price(ticker):
         return 0.0
 
 def simulate_model(tickers, holdings, periods, reinvest_freq, allow_fractional):
-    freq_map = {'Monthly': 12, 'Quarterly': 4, 'Annually': 1}
+    freq_map = {'Weekly': 52, 'Bi-Weekly': 26, 'Monthly': 12, 'Quarterly': 4, 'Semi-Annually': 2, 'Annually': 1}
     steps = periods * freq_map[reinvest_freq]
 
     df = pd.DataFrame(columns=tickers)
