@@ -149,18 +149,19 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
         records.append(row)
         current = new
 
-        df = pd.DataFrame(records, index=dates)
-        df.index.name = …
-        # ── INSERT HERE ──
-        # Portfolio‐level capital gain totals
-        cap_cols    = [c for c in df.columns if c.endswith("_CapGain")]
-        cumcap_cols = [c for c in df.columns if c.endswith("_CumulativeCap")]
-        if cap_cols:
-            df["Total CapGain"]      = df[cap_cols].sum(axis=1)
-        if cumcap_cols:
-            df["Total CumulativeCap"] = df[cumcap_cols].sum(axis=1)
-        # ── END INSERT ──
-        return df
+    # ◀◀ AFTER the loop finishes:
+    df = pd.DataFrame(records, index=dates)
+    df.index.name = "Date" if historical else f"{freq} Step"
+
+    # ── Insert portfolio‐level capital gains etc. here ──
+    cap_cols    = [c for c in df.columns if c.endswith("_CapGain")]
+    cumcap_cols = [c for c in df.columns if c.endswith("_CumulativeCap")]
+    if cap_cols:
+        df["Total CapGain"]      = df[cap_cols].sum(axis=1)
+    if cumcap_cols:
+        df["Total CumulativeCap"] = df[cumcap_cols].sum(axis=1)
+
+    return df
 
 def simulate_forward(tickers, holdings, periods, freq, cascade, frac, last_handling):
     return _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, False)
@@ -294,11 +295,17 @@ with tab2:
         if st.button("Load"):
             mf   = Path("models")/user/f"{sel}.json"
             data = json.loads(mf.read_text())
-            fn   = simulate_forward if data["mode"]=="Forward Projection" else simulate_backtest
-            df   = fn(
-                data["tickers"], data["holdings"],
-                data["periods"], data["reinvest_freq"],
-                data["cascade_matrix"], data["allow_fractional"],
+            fn = (simulate_forward
+        if data["mode"] == "Forward Projection"
+        else simulate_backtest)
+
+            df = fn(
+                data["tickers"],
+                data["holdings"],
+                data["periods"],
+                data["reinvest_freq"],    # this matches the function’s 4th param `freq`
+                data["cascade_matrix"],
+                data["allow_fractional"],
                 data["last_handling"]
             )
             st.subheader("Loaded Simulation")
