@@ -214,7 +214,7 @@ with tab1:
             st.warning("Unable to compute portfolio statistics.")
         
         periods = st.number_input("Number of Years to Simulate", min_value=1, value=5)
-        reinvest_freq = st.selectbox("Dividend Reinvestment Frequency", ['Monthly', 'Quarterly', 'Annually'])
+        reinvest_freq = st.selectbox("Dividend Reinvestment Frequency", ['Weekly', 'Monthly', 'Quarterly', 'Semi-Annually', 'Annually'])
         allow_fractional = st.checkbox("Allow Fractional Shares?", value=True)
         save_option = st.checkbox("Make Model Public")  # public flag
         sim_mode = st.radio("Simulation Mode", ["Forward Projection", "Historical Backtest"])
