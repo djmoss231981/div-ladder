@@ -87,25 +87,19 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
         for i, t in enumerate(tickers):
             s = current[t]
             # price
-            if historical:
-                hist_p = yf.Ticker(t).history(start=idx, end=idx+pd.Timedelta(days=5))
-                price = hist_p["Close"].mean() if not hist_p.empty else get_price(t)
-                # dividend per share
-                dv_series = yf.Ticker(t).dividends
-                if not dv_series.empty:
-                    dv_series.index = dv_series.index.tz_localize(None)
-                    dv_series = dv_series[dv_series.index <= pd.Timestamp(idx)]
-                per_share = dv_series.iloc[-1] if not dv_series.empty else 0.0
-            else:
-                price = get_price(t)
-                # ── INSERT HERE ──
-                # Compute capital gain for this step
-                market_value = s * price
-                cap_gain     = market_value - last_mv[t]
-                cumulative_cap[t] += cap_gain
-                last_mv[t] = market_value
-                # ── END INSERT ──
-                per_share = get_dividend(t)/freq_map[freq]
+                # 1) Determine price & per_share
+    if historical:
+        price = … 
+        per_share = …
+    else:
+        price = get_price(t)
+        per_share = get_dividend(t)/freq_map[freq]
+
+    # 2) Now that price exists, compute capital gain
+    market_value = s * price
+    cap_gain     = market_value - last_mv[t]
+    cumulative_cap[t] += cap_gain
+    last_mv[t] = market_value
 
             earned = s * per_share
             cumulative[t] += earned
