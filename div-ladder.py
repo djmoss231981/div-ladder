@@ -34,7 +34,7 @@ def get_price(ticker):
         return 0.0
 
 def simulate_model(tickers, holdings, periods, reinvest_freq, allow_fractional):
-    freq_map = {'Monthly': 12, 'Quarterly': 4, 'Annually': 1}
+    freq_map = {'Weekly': 52, 'Monthly': 12, 'Quarterly': 4, 'Semi-Annually': 2, 'Annually': 1}
     steps = periods * freq_map[reinvest_freq]
 
     df = pd.DataFrame(columns=tickers)
@@ -199,12 +199,12 @@ with tab1:
         if sim_mode == "Historical Backtest":
             st.warning("Historical backtest will use actual dividend history if available.")
             def simulate_historical(tickers, holdings, periods, reinvest_freq, allow_fractional):
-                freq_map = {'Monthly': 12, 'Quarterly': 4, 'Annually': 1}
+                freq_map = {'Weekly': 52, 'Monthly': 12, 'Quarterly': 4, 'Semi-Annually': 2, 'Annually': 1}
                 steps = periods * freq_map[reinvest_freq]
 
                 df = pd.DataFrame(columns=tickers)
                 df.loc[0] = holdings
-                dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq={'Monthly':'M', 'Quarterly':'Q', 'Annually':'Y'}[reinvest_freq])
+                dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq={'Weekly':'W', 'Monthly':'M', 'Quarterly':'Q', 'Semi-Annually':'S', 'Annually':'Y'}[reinvest_freq])
 
                 for step, date in enumerate(dates, 1):
                     last = df.loc[step - 1].copy()
