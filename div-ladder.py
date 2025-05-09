@@ -325,4 +325,3 @@ with st.expander("Browse Public Models"):
             st.json(md)
     else:
         st.info("No public models.")
-```
