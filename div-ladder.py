@@ -7,9 +7,19 @@ import hashlib
 
 st.set_page_config(page_title="div-ladder", layout="wide")
 
-# --- AUTHENTICATION ---
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+# --- CACHED DATA FETCH ---
+@st.cache_data
+def load_ticker_data(tickers):
+    data = {}
+    for t in tickers:
+        tk = yf.Ticker(t)
+        hist = tk.history(period="1y")["Close"].resample('D').ffill()
+        div  = tk.dividends.resample('D').ffill()
+        data[t] = (hist, div)
+    return data
+
+# --- AUTH UTILITIES ---
+def hash_password(pwd): return hashlib.sha256(pwd.encode()).hexdigest()
 
 def load_users():
     p = Path("auth/users.json"); p.parent.mkdir(exist_ok=True)
@@ -17,305 +27,168 @@ def load_users():
 
 def save_users(users):
     Path("auth").mkdir(exist_ok=True)
-    with open("auth/users.json", "w") as f:
-        json.dump(users, f)
+    (Path("auth/users.json")).write_text(json.dumps(users))
 
-def authenticate(u, p):
+def authenticate(user, pwd):
     users = load_users()
-    return u in users and users[u]["password"] == hash_password(p)
+    return users.get(user, {}).get('password') == hash_password(pwd)
 
 # --- MODEL STORAGE ---
-def save_user_model(user, name, data, public=False):
+def save_model(user, name, model, public=False):
     folder = Path("models")/user; folder.mkdir(parents=True, exist_ok=True)
-    data["public"] = public
-    with open(folder/f"{name}.json","w") as f:
-        json.dump(data, f)
+    model['public'] = public
+    (folder/f"{name}.json").write_text(json.dumps(model))
 
-def get_user_models(user):
+def list_models(user):
     folder = Path("models")/user
     return [f.stem for f in folder.glob("*.json")] if folder.exists() else []
 
 def list_public_models():
-    out = []
-    root = Path("models")
-    if root.exists():
-        for d in root.iterdir():
-            if d.is_dir():
-                for f in d.glob("*.json"):
-                    md = json.loads(f.read_text())
-                    if md.get("public"):
-                        out.append((d.name, f.stem, md))
-    return out
+    pubs = []
+    for udir in Path("models").iterdir():
+        if udir.is_dir():
+            for f in udir.glob("*.json"):
+                m = json.loads(f.read_text())
+                if m.get('public'):
+                    pubs.append((udir.name, f.stem, m))
+    return pubs
 
-# --- DATA HELPERS ---
-def get_price(ticker):
-    try:
-        return yf.Ticker(ticker).history(period="1d")["Close"].iloc[-1]
-    except:
-        return 0.0
-
-def get_dividend(ticker):
-    try:
-        dv = yf.Ticker(ticker).dividends
-        return dv.iloc[-1] if not dv.empty else 0.0
-    except:
-        return 0.0
-
-# --- CORE SIMULATION ---
-def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, historical=False):
+# --- SIMULATION CORE ---
+def simulate(tickers, shares, years, freq, cascade, frac, last_handling, historical=False):
     freq_map = {'Weekly':52,'Monthly':12,'Quarterly':4,'Semi-Annual':2,'Annually':1}
-    date_freq = {'Weekly':'W','Monthly':'M','Quarterly':'Q','Semi-Annual':'2Q','Annually':'A'}[freq]
-    steps = periods * freq_map[freq]
-    dates = (pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=date_freq)
-             if historical else range(steps))
-    current = dict(zip(tickers, holdings))
-    cumulative = {t:0.0 for t in tickers}
-    records = []
+    steps = int(years * freq_map[freq])
+    prices, divs = load_ticker_data(tickers)
 
-    # ── INSERT HERE ──
-    # Initial cost basis and trackers for capital gains
-    initial_costs = {
-        t: holdings[i] * get_price(t)
-        for i, t in enumerate(tickers)
-    }
-    last_mv = initial_costs.copy()
-    cumulative_cap = {t: 0.0 for t in tickers}
-    # ── END INSERT ──
-
-    for idx in dates:
-        row = {}; new = current.copy()
-        for i, t in enumerate(tickers):
-            s = current[t]
-            # price
-                # 1) Determine price & per_share
+    # prepare time indexes
     if historical:
-        price = … 
-        per_share = …
+        dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=freq[0])
     else:
-        price = get_price(t)
-        per_share = get_dividend(t)/freq_map[freq]
+        dates = range(steps)
 
-    # 2) Now that price exists, compute capital gain
-    market_value = s * price
-    cap_gain     = market_value - last_mv[t]
-    cumulative_cap[t] += cap_gain
-    last_mv[t] = market_value
+    holdings = dict(zip(tickers, shares))
+    cum_div  = dict.fromkeys(tickers, 0.0)
+    cum_cap  = dict.fromkeys(tickers, 0.0)
+    last_vals= {t: shares[i] * prices[t].iloc[-1] for i,t in enumerate(tickers)}
+    records  = []
 
-            earned = s * per_share
-            cumulative[t] += earned
+    # index mapping to evenly sample price/div series
+    idx_map = lambda arr: (arr * len(arr) // steps).astype(int)
 
-            pct      = cascade[i]/100 if i < len(cascade) else 0
-            cascaded = earned * pct
-            reinv    = earned - cascaded
+    for idx in range(steps):
+        row = {}
+        for i, t in enumerate(tickers):
+            pos = idx_map(pd.Series(range(steps))).iloc[idx]
+            price   = prices[t].iat[pos]
+            dividend= (divs[t].iat[pos] if historical else divs[t].iat[-1] / freq_map[freq])
 
-            # last security override
-            if i == len(tickers)-1:
-                if last_handling == "Reinvest in itself":
-                    reinv, cascaded = earned, 0.0
-                else:
-                    reinv, cascaded = 0.0, earned
+            s = holdings[t]
+            earned = s * dividend
+            cum_div[t] += earned
 
-            # buy self
-            bought_self = reinv/price if frac else reinv//price
-            new[t] += bought_self
+            mv   = s * price
+            gain = mv - last_vals[t]
+            cum_cap[t] += gain
+            last_vals[t] = mv
 
-            # buy next or distribute
+            pct  = cascade[i] / 100 if i < len(cascade) else 0
+            reinv= earned * (1-pct)
+            casc = earned * pct
+            if i == len(tickers)-1 and last_handling!='Reinvest in itself':
+                casc, reinv = earned, 0
+
+            holdings[t] += (reinv/price if frac else reinv//price)
             if i < len(tickers)-1:
-                np = get_price(tickers[i+1])
-                bought_next = cascaded/np if frac else cascaded//np
-                new[tickers[i+1]] += bought_next
-            elif last_handling=="Distribute equally across chain":
-                part = cascaded/len(tickers)
+                holdings[tickers[i+1]] += casc / prices[tickers[i+1]].iat[pos]
+            elif last_handling=='Distribute equally across chain':
+                part = casc / len(tickers)
                 for tk in tickers:
-                    tp = get_price(tk)
-                    new[tk] += (part/tp if frac else part//tp)
+                    holdings[tk] += part / prices[tk].iat[pos]
 
-            # record metrics
-            row[f"{t}_Holdings"]      = s
-            row[f"{t}_Price"]         = price
-            row[f"{t}_MarketValue"]   = market_value
-            row[f"{t}_CapGain"]        = cap_gain                # NEW
-            row[f"{t}_CumulativeCap"]  = cumulative_cap[t]       # NEW
-            row[f"{t}_Earned"]         = earned
-            row[f"{t}_Cascaded"]       = cascaded
-            row[f"{t}_CumulativeDivs"] = cumulative[t]
-
+            row.update({
+                f"{t}_Holdings": s,
+                f"{t}_Price": price,
+                f"{t}_MarketValue": mv,
+                f"{t}_CapGain": gain,
+                f"{t}_CumulativeCap": cum_cap[t],
+                f"{t}_Earned": earned,
+                f"{t}_Cascaded": casc,
+                f"{t}_CumulativeDivs": cum_div[t]
+            })
         records.append(row)
-        current = new
 
-    # ◀◀ AFTER the loop finishes:
     df = pd.DataFrame(records, index=dates)
-    df.index.name = "Date" if historical else f"{freq} Step"
+    df.index.name = 'Date' if historical else 'Step'
 
-    # ── Insert portfolio‐level capital gains etc. here ──
-    cap_cols    = [c for c in df.columns if c.endswith("_CapGain")]
-    cumcap_cols = [c for c in df.columns if c.endswith("_CumulativeCap")]
-    if cap_cols:
-        df["Total CapGain"]      = df[cap_cols].sum(axis=1)
-    if cumcap_cols:
-        df["Total CumulativeCap"] = df[cumcap_cols].sum(axis=1)
+    # portfolio aggregates
+    agg = df.filter(like='_MarketValue').sum(axis=1)
+    df['Total MarketValue']    = agg
+    df['Total CumulativeDivs'] = df.filter(like='_CumulativeDivs').sum(axis=1)
+    df['Total CapGain']        = df.filter(like='_CapGain').sum(axis=1)
+    df['Total CumulativeCap']  = df.filter(like='_CumulativeCap').sum(axis=1)
+    df['Total PortfolioValue'] = df['Total MarketValue'] + df['Total CumulativeDivs']
 
     return df
 
-def simulate_forward(tickers, holdings, periods, freq, cascade, frac, last_handling):
-    return _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, False)
-
-def simulate_backtest(tickers, holdings, periods, freq, cascade, frac, last_handling):
-    return _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, True)
-
-# --- LOGIN/REGISTER UI ---
-if "user" not in st.session_state:
-    with st.expander("Login / Register"):
-        mode = st.radio("Mode", ["Login","Register"])
-        u = st.text_input("Username"); p = st.text_input("Password", type="password")
+# --- UI ---
+if 'user' not in st.session_state:
+    with st.expander('Login/Register'):
+        mode = st.radio('Mode',['Login','Register'])
+        u    = st.text_input('Username')
+        p    = st.text_input('Password', type='password')
         if st.button(mode):
-            us = load_users()
-            if mode=="Register":
-                if u in us: st.error("Username exists.")
-                else:
-                    us[u] = {"password":hash_password(p)}
-                    save_users(us)
-                    st.success("Registered—please log in.")
+            users = load_users()
+            if mode=='Register':
+                users[u] = {'password':hash_password(p)}; save_users(users); st.success('Registered')
             else:
-                if authenticate(u,p):
-                    st.session_state["user"] = u
-                    st.success(f"Welcome, {u}!")
-                else:
-                    st.error("Login failed.")
+                if authenticate(u,p): st.session_state['user']=u; st.success(f'Welcome {u}')
+                else: st.error('Login failed')
     st.stop()
 
-user = st.session_state["user"]
-st.title("div-ladder")
+user = st.session_state['user']
+st.title('div-ladder')
 
-# --- MAIN UI ---
-tab1, tab2 = st.tabs(["Create Simulation","Load Model"])
+tabs = st.tabs(['Create','Load','Public'])
 
-with tab1:
-    with st.form("form"):
-        name = st.text_input("Model Name")
-        n    = st.slider("Number of Securities", 2, 6, 3)
-        tickers, shares = [], []
+# Create Tab
+with tabs[0]:
+    with st.form('create'):
+        name         = st.text_input('Model Name')
+        n            = st.slider('Count',2,6,3)
+        ticks        = [st.text_input(f'T{i+1}') for i in range(n)]
+        shares       = [st.number_input(f'S{i+1}',100.0) for i in range(n)]
+        cascade      = [st.slider(f'{ticks[i]}→{ticks[i+1]}',0,100,100,5) for i in range(n-1)]
+        last_hand    = st.selectbox('Last Dividend',['Reinvest in itself','Distribute equally'])
+        freq         = st.selectbox('Frequency',['Weekly','Monthly','Quarterly','Semi-Annual','Annually'])
+        years,frac   = st.number_input('Years',1,30,5), st.checkbox('Allow Fractional',True)
+        pub          = st.checkbox('Make Public')
+        mode         = st.radio('Mode',['Forward','Historical'])
+        submit       = st.form_submit_button('Run')
 
-        for i in range(n):
-            c1, c2 = st.columns(2)
-            with c1:
-                t = st.text_input(f"Ticker {i+1}", key=f"t{i}").upper()
-                if t:
-                    hist = yf.Ticker(t).dividends
-                    if not hist.empty:
-                        hist.index = hist.index.tz_localize(None)
-                        recent = hist[hist.index >= pd.Timestamp.today() - pd.DateOffset(years=1)]
-                        if not recent.empty:
-                            last4 = recent.sort_index(ascending=False).head(4)
-                            st.markdown(f"• **Payouts (last year)**: {len(last4)}")
-                            st.markdown(f"• **Avg Payout**: ${last4.mean():.4f}")
-                        else:
-                            st.warning("No payouts found, enter a new ticker")
-                    else:
-                        st.warning("No payouts found, enter a new ticker")
-            with c2:
-                s = st.number_input(f"Shares {i+1}", value=100.0, min_value=0.0, key=f"s{i}")
-            tickers.append(t); shares.append(s)
-
-        st.subheader("Cascade % Between Pairs")
-        cascade = []
-        for i in range(n-1):
-            pct = st.slider(f"{tickers[i]}→{tickers[i+1]}", 0, 100, 100, step=5, key=f"c{i}")
-            cascade.append(pct)
-
-        last_hand = st.selectbox("Last Security Dividend Handling",
-                                 ["Reinvest in itself","Distribute equally across chain"]
-        )
-        freq = st.selectbox("Frequency", ['Weekly','Monthly','Quarterly','Semi-Annual','Annually'])
-        yrs  = st.number_input("Years to Simulate", 1, 30, 5)
-        frac = st.checkbox("Allow Fractional Shares", True)
-        pub  = st.checkbox("Make Model Public")
-        mode = st.radio("Mode", ["Forward Projection","Historical Backtest"])
-
-        go   = st.form_submit_button("Run Simulation")
-
-    if go:
-        df = (simulate_forward if mode=="Forward Projection" else simulate_backtest)(
-            tickers, shares, yrs, freq, cascade, frac, last_hand
-        )
-
-        st.subheader("Simulation Results")
+    if submit:
+        df = simulate(ticks, shares, years, freq, cascade, frac, last_hand, mode=='Historical')
         st.dataframe(df)
+        st.area_chart(df[['Total MarketValue','Total CumulativeDivs']])
+        st.line_chart(df['Total PortfolioValue'])
+        for t in ticks:
+            st.expander(t).write(df.filter(like=f'{t}_'))
+        save_model(user,name,{'tickers':ticks,'holdings':shares,'years':years,'freq':freq,'cascade':cascade,'frac':frac,'last_hand':last_hand,'mode':mode},pub)
 
-        # Portfolio totals
-        df["Total Market Value"]    = df.filter(like="_MarketValue").sum(axis=1)
-        df["Total Cumulative Divs"] = df.filter(like="_CumulativeDivs").sum(axis=1)
-        df["Total Portfolio Value"] = df["Total Market Value"] + df["Total Cumulative Divs"]
-
-        st.subheader("Portfolio Totals Over Time")
-        st.line_chart(df[["Total Market Value","Total Cumulative Divs"]])
-
-        st.subheader("Compounding Growth Over Time")
-        st.area_chart(df[["Total Market Value","Total Cumulative Divs"]])
-        st.subheader("Portfolio Capital Gains Over Time")
-        available = []
-        if "Total CapGain" in df.columns:
-            available.append("Total CapGain")
-        if "Total CumulativeCap" in df.columns:
-            available.append("Total CumulativeCap")
-
-        if available:
-            st.line_chart(df[available])
-        else:
-            st.info("No capital gains data available.")
-
-        st.subheader("Total Portfolio Value Curve")
-        st.line_chart(df["Total Portfolio Value"])
-
-        st.subheader("Per-Security Breakdown")
-        for t in tickers:
-            with st.expander(t):
-                cols = [f"{t}_{m}" for m in ["Holdings","Cost","Price","MarketValue","Earned","Cascaded","CumulativeDivs"]]
-                st.dataframe(df[cols])
-
-        if name:
-            save_user_model(user, name, {
-                "tickers": tickers, "holdings": shares,
-                "periods": yrs, "reinvest_freq": freq,
-                "cascade_matrix": cascade, "allow_fractional": frac,
-                "mode": mode, "last_handling": last_hand
-            }, public=pub)
-            st.success(f"Model '{name}' saved.")
-
-with tab2:
-    own = get_user_models(user)
-    if own:
-        sel = st.selectbox("Your Models", own)
-        if st.button("Load"):
-            mf   = Path("models")/user/f"{sel}.json"
-            data = json.loads(mf.read_text())
-            fn = (simulate_forward
-        if data["mode"] == "Forward Projection"
-        else simulate_backtest)
-
-            df = fn(
-                data["tickers"],
-                data["holdings"],
-                data["periods"],
-                data["reinvest_freq"],    # this matches the function’s 4th param `freq`
-                data["cascade_matrix"],
-                data["allow_fractional"],
-                data["last_handling"]
-            )
-            st.subheader("Loaded Simulation")
+# Load Tab
+with tabs[1]:
+    models = list_models(user)
+    if models:
+        sel = st.selectbox('Your Models', models)
+        if st.button('Load'):
+            data = json.loads((Path('models')/user/f'{sel}.json').read_text())
+            df   = simulate(**{**data, 'historical': data['mode']=='Historical'})
             st.dataframe(df)
-            for t in data["tickers"]:
-                with st.expander(t):
-                    cols = [f"{t}_{m}" for m in ["Holdings","Cost","Price","MarketValue","Earned","Cascaded","CumulativeDivs"]]
-                    st.dataframe(df[cols])
+            for t in data['tickers']:
+                st.expander(t).write(df.filter(like=f'{t}_'))
     else:
-        st.info("No models yet.")
+        st.info('No models found')
 
-with st.expander("Browse Public Models"):
-    pubs = list_public_models()
-    if pubs:
-        for owner,name,md in pubs:
-            st.markdown(f"**{owner}/{name}**")
-            st.json(md)
-    else:
-        st.info("No public models.")
+# Public Tab
+with tabs[2]:
+    for u,name,m in list_public_models():
+        st.markdown(f'**{u}/{name}**')
+        st.json(m)
