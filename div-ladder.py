@@ -66,8 +66,7 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
     freq_map = {'Weekly':52,'Monthly':12,'Quarterly':4,'Semi-Annual':2,'Annually':1}
     date_freq = {'Weekly':'W','Monthly':'M','Quarterly':'Q','Semi-Annual':'2Q','Annually':'A'}[freq]
     steps = periods * freq_map[freq]
-    dates = (pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=date_freq)
-             if historical else range(steps))
+    dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=date_freq) if historical else range(steps)
     current = dict(zip(tickers, holdings))
     records = []
 
@@ -77,17 +76,21 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
             s = current[t]
             # determine price
             if historical:
-                hist = yf.Ticker(t).history(start=idx, end=idx+pd.Timedelta(days=5))
-                price = hist["Close"].mean() if not hist.empty else get_price(t)
+                hist_price = yf.Ticker(t).history(start=idx, end=idx+pd.Timedelta(days=5))
+                price = hist_price["Close"].mean() if not hist_price.empty else get_price(t)
+                # last dividend up to idx
                 dv_series = yf.Ticker(t).dividends
-                dv_series = dv_series[dv_series.index <= idx] if not dv_series.empty else pd.Series()
+                if not dv_series.empty:
+                    # strip tz for comparison
+                    dv_series.index = dv_series.index.tz_localize(None)
+                    dv_series = dv_series[dv_series.index <= pd.Timestamp(idx)]
                 per_share = dv_series.iloc[-1] if not dv_series.empty else 0.0
             else:
                 price = get_price(t)
-                per_share = get_dividend(t) / freq_map[freq]
+                per_share = get_dividend(t)/freq_map[freq]
 
             earned = s * per_share
-            pct = cascade[i] / 100 if i < len(cascade) else 0
+            pct = cascade[i]/100 if i < len(cascade) else 0
             cascaded = earned * pct
             reinv = earned - cascaded
 
@@ -126,11 +129,11 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
     df.index.name = "Date" if historical else f"{freq} Step"
     return df
 
-def simulate_forward(*args, **kwargs):
-    return _simulate(*args, historical=False, **kwargs)
+def simulate_forward(tickers, holdings, periods, freq, cascade, frac, last_handling):
+    return _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, historical=False)
 
-def simulate_backtest(*args, **kwargs):
-    return _simulate(*args, historical=True, **kwargs)
+def simulate_backtest(tickers, holdings, periods, freq, cascade, frac, last_handling):
+    return _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, historical=True)
 
 # --- LOGIN / REGISTER UI ---
 if "user" not in st.session_state:
@@ -162,7 +165,6 @@ tab1, tab2 = st.tabs(["Create Simulation", "Load Model"])
 
 with tab1:
     with st.form("form"):
-        # Model definition
         name = st.text_input("Model Name")
         n   = st.slider("Number of Securities", 2, 6, 3)
         tickers, shares = [], []
@@ -174,15 +176,15 @@ with tab1:
                 if t:
                     # Dividend history lookup
                     hist = yf.Ticker(t).dividends
-                    one_yr_ago = pd.Timestamp.today() - pd.DateOffset(years=1)
                     if not hist.empty:
+                        # strip tz
+                        hist.index = hist.index.tz_localize(None)
+                        one_yr_ago = pd.Timestamp.today() - pd.DateOffset(years=1)
                         recent = hist[hist.index >= one_yr_ago]
                         if not recent.empty:
                             last4 = recent.sort_index(ascending=False).head(4)
-                            freq_cnt = len(last4)
-                            avg_payout = last4.mean()
-                            st.markdown(f"• **Payouts (last year)**: {freq_cnt} (up to 4)")
-                            st.markdown(f"• **Average Payout**: ${avg_payout:.4f}")
+                            st.markdown(f"• **Payouts (last year)**: {len(last4)}")
+                            st.markdown(f"• **Avg Payout**: ${last4.mean():.4f}")
                         else:
                             st.warning("No payouts found, enter a new ticker")
                     else:
@@ -191,38 +193,30 @@ with tab1:
                 s = st.number_input(f"Shares {i+1}", value=100.0, min_value=0.0, key=f"s{i}")
             tickers.append(t); shares.append(s)
 
-        # Cascade matrix
         st.subheader("Cascade % Between Pairs")
         cascade = []
         for i in range(n-1):
             pct = st.slider(f"{tickers[i]}→{tickers[i+1]}", 0, 100, 100, step=5, key=f"c{i}")
             cascade.append(pct)
 
-        # Last security handling
         last_hand = st.selectbox(
             "Last Security Dividend Handling",
             ["Reinvest in itself", "Distribute equally across chain"]
         )
-
-        # Simulation settings
-        freq = st.selectbox("Frequency", 
-                            ['Weekly','Monthly','Quarterly','Semi-Annual','Annually'])
+        freq = st.selectbox("Frequency", ['Weekly','Monthly','Quarterly','Semi-Annual','Annually'])
         yrs  = st.number_input("Years to Simulate", 1, 30, 5)
         frac = st.checkbox("Allow Fractional Shares", True)
         pub  = st.checkbox("Make Model Public")
         mode = st.radio("Mode", ["Forward Projection","Historical Backtest"])
 
-        # **Submit button**
         go = st.form_submit_button("Run Simulation")
 
-    # **Ensure this runs only after submit**
     if go:
-        simulator = simulate_forward if mode=="Forward Projection" else simulate_backtest
-        df = simulator(
-            tickers, shares, yrs, freq, cascade, frac, last_handling=last_hand
-        )
+        if mode == "Forward Projection":
+            df = simulate_forward(tickers, shares, yrs, freq, cascade, frac, last_hand)
+        else:
+            df = simulate_backtest(tickers, shares, yrs, freq, cascade, frac, last_hand)
 
-        # Results
         st.subheader("Simulation Results")
         st.dataframe(df)
 
@@ -252,13 +246,21 @@ with tab2:
         if st.button("Load"):
             mf = Path("models")/user/f"{sel}.json"
             data = json.loads(mf.read_text())
-            sim = (simulate_forward if data["mode"]=="Forward Projection"
-                   else simulate_backtest)
-            df = sim(
-                data["tickers"], data["holdings"], data["periods"],
-                data["reinvest_freq"], data["cascade_matrix"],
-                data["allow_fractional"], last_handling=data["last_handling"]
-            )
+            if data["mode"] == "Forward Projection":
+                df = simulate_forward(
+                    data["tickers"], data["holdings"],
+                    data["periods"], data["reinvest_freq"],
+                    data["cascade_matrix"], data["allow_fractional"],
+                    data["last_handling"]
+                )
+            else:
+                df = simulate_backtest(
+                    data["tickers"], data["holdings"],
+                    data["periods"], data["reinvest_freq"],
+                    data["cascade_matrix"], data["allow_fractional"],
+                    data["last_handling"]
+                )
+            st.subheader("Loaded Simulation")
             st.dataframe(df)
             for t in data["tickers"]:
                 with st.expander(t):
@@ -270,7 +272,7 @@ with tab2:
 with st.expander("Browse Public Models"):
     pubs = list_public_models()
     if pubs:
-        for owner,name,md in pubs:
+        for owner, name, md in pubs:
             st.markdown(f"**{owner}/{name}**")
             st.json(md)
     else:
