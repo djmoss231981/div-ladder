@@ -10,13 +10,15 @@ st.set_page_config(page_title="div-ladder", layout="wide")
 # --- CACHED DATA FETCH ---
 @st.cache_data
 def load_ticker_data(tickers):
-    data = {}
+    prices = {}
+    divs   = {}
     for t in tickers:
         tk = yf.Ticker(t)
         hist = tk.history(period="1y")["Close"].resample('D').ffill()
-        div  = tk.dividends.resample('D').ffill()
-        data[t] = (hist, div)
-    return data
+        dv   = tk.dividends.resample('D').ffill()
+        prices[t] = hist
+        divs[t]   = dv
+    return prices, divs
 
 # --- AUTH UTILITIES ---
 def hash_password(pwd): return hashlib.sha256(pwd.encode()).hexdigest()
@@ -44,12 +46,14 @@ def list_models(user):
 
 def list_public_models():
     pubs = []
-    for udir in Path("models").iterdir():
-        if udir.is_dir():
-            for f in udir.glob("*.json"):
-                m = json.loads(f.read_text())
-                if m.get('public'):
-                    pubs.append((udir.name, f.stem, m))
+    root = Path("models")
+    if root.exists():
+        for udir in root.iterdir():
+            if udir.is_dir():
+                for f in udir.glob("*.json"):
+                    m = json.loads(f.read_text())
+                    if m.get('public'):
+                        pubs.append((udir.name, f.stem, m))
     return pubs
 
 # --- SIMULATION CORE ---
