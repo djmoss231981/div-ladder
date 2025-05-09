@@ -27,17 +27,16 @@ def load_users():
 
 def save_users(users):
     Path("auth").mkdir(exist_ok=True)
-    (Path("auth/users.json")).write_text(json.dumps(users))
+    Path("auth/users.json").write_text(json.dumps(users))
 
 def authenticate(user, pwd):
-    users = load_users()
-    return users.get(user, {}).get('password') == hash_password(pwd)
+    return load_users().get(user, {}).get('password') == hash_password(pwd)
 
 # --- MODEL STORAGE ---
 def save_model(user, name, model, public=False):
     folder = Path("models")/user; folder.mkdir(parents=True, exist_ok=True)
     model['public'] = public
-    (folder/f"{name}.json").write_text(json.dumps(model))
+    Path(folder/f"{name}.json").write_text(json.dumps(model))
 
 def list_models(user):
     folder = Path("models")/user
@@ -59,7 +58,6 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
     steps = int(years * freq_map[freq])
     prices, divs = load_ticker_data(tickers)
 
-    # prepare time indexes
     if historical:
         dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=freq[0])
     else:
@@ -70,16 +68,14 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
     cum_cap  = dict.fromkeys(tickers, 0.0)
     last_vals= {t: shares[i] * prices[t].iloc[-1] for i,t in enumerate(tickers)}
     records  = []
-
-    # index mapping to evenly sample price/div series
-    idx_map = lambda arr: (arr * len(arr) // steps).astype(int)
+    idxs     = (pd.Series(range(steps)) * len(prices[tickers[0]]) // steps).astype(int)
 
     for idx in range(steps):
         row = {}
+        pos = idxs.iat[idx]
         for i, t in enumerate(tickers):
-            pos = idx_map(pd.Series(range(steps))).iloc[idx]
-            price   = prices[t].iat[pos]
-            dividend= (divs[t].iat[pos] if historical else divs[t].iat[-1] / freq_map[freq])
+            price    = prices[t].iat[pos]
+            dividend = (divs[t].iat[pos] if historical else divs[t].iat[-1] / freq_map[freq])
 
             s = holdings[t]
             earned = s * dividend
@@ -90,9 +86,9 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
             cum_cap[t] += gain
             last_vals[t] = mv
 
-            pct  = cascade[i] / 100 if i < len(cascade) else 0
-            reinv= earned * (1-pct)
-            casc = earned * pct
+            pct   = cascade[i] / 100 if i < len(cascade) else 0
+            reinv = earned * (1-pct)
+            casc  = earned * pct
             if i == len(tickers)-1 and last_handling!='Reinvest in itself':
                 casc, reinv = earned, 0
 
@@ -107,6 +103,7 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
             row.update({
                 f"{t}_Holdings": s,
                 f"{t}_Price": price,
+                f"{t}_Cost": mv,
                 f"{t}_MarketValue": mv,
                 f"{t}_CapGain": gain,
                 f"{t}_CumulativeCap": cum_cap[t],
@@ -119,9 +116,7 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
     df = pd.DataFrame(records, index=dates)
     df.index.name = 'Date' if historical else 'Step'
 
-    # portfolio aggregates
-    agg = df.filter(like='_MarketValue').sum(axis=1)
-    df['Total MarketValue']    = agg
+    df['Total MarketValue']    = df.filter(like='_MarketValue').sum(axis=1)
     df['Total CumulativeDivs'] = df.filter(like='_CumulativeDivs').sum(axis=1)
     df['Total CapGain']        = df.filter(like='_CapGain').sum(axis=1)
     df['Total CumulativeCap']  = df.filter(like='_CumulativeCap').sum(axis=1)
@@ -152,33 +147,34 @@ tabs = st.tabs(['Create','Load','Public'])
 # Create Tab
 with tabs[0]:
     with st.form('create'):
-        name         = st.text_input('Model Name')
-        n            = st.slider('Count',2,6,3)
-        ticks        = [st.text_input(f'T{i+1}') for i in range(n)]
-        shares       = [st.number_input(f'S{i+1}',100.0) for i in range(n)]
-        cascade      = [st.slider(f'{ticks[i]}→{ticks[i+1]}',0,100,100,5) for i in range(n-1)]
-        last_hand    = st.selectbox('Last Dividend',['Reinvest in itself','Distribute equally'])
-        freq         = st.selectbox('Frequency',['Weekly','Monthly','Quarterly','Semi-Annual','Annually'])
-        years,frac   = st.number_input('Years',1,30,5), st.checkbox('Allow Fractional',True)
-        pub          = st.checkbox('Make Public')
-        mode         = st.radio('Mode',['Forward','Historical'])
-        submit       = st.form_submit_button('Run')
+        name      = st.text_input('Model Name')
+        n         = st.slider('Count',2,6,3, key='count')
+        ticks     = [st.text_input(f'T{i+1}', key=f'tick_{i}') for i in range(n)]
+        shares    = [st.number_input(f'S{i+1}',100.0, key=f'share_{i}') for i in range(n)]
+        cascade   = [st.slider(f'{ticks[i]}→{ticks[i+1]}',0,100,100,5, key=f'cascade_{i}') for i in range(n-1)]
+        last_hand = st.selectbox('Last Dividend',['Reinvest in itself','Distribute equally'], key='last')
+        freq      = st.selectbox('Frequency',['Weekly','Monthly','Quarterly','Semi-Annual','Annually'], key='freq')
+        years     = st.number_input('Years',1,30,5, key='years')
+        frac      = st.checkbox('Allow Fractional',True, key='frac')
+        pub       = st.checkbox('Make Public', key='pub')
+        mode_sel  = st.radio('Mode',['Forward','Historical'], key='mode')
+        submit    = st.form_submit_button('Run')
 
     if submit:
-        df = simulate(ticks, shares, years, freq, cascade, frac, last_hand, mode=='Historical')
+        df = simulate(ticks, shares, years, freq, cascade, frac, last_hand, mode_sel=='Historical')
         st.dataframe(df)
         st.area_chart(df[['Total MarketValue','Total CumulativeDivs']])
         st.line_chart(df['Total PortfolioValue'])
         for t in ticks:
             st.expander(t).write(df.filter(like=f'{t}_'))
-        save_model(user,name,{'tickers':ticks,'holdings':shares,'years':years,'freq':freq,'cascade':cascade,'frac':frac,'last_hand':last_hand,'mode':mode},pub)
+        save_model(user,name,{'tickers':ticks,'holdings':shares,'years':years,'freq':freq,'cascade':cascade,'frac':frac,'last_hand':last_hand,'mode':mode_sel},pub)
 
 # Load Tab
 with tabs[1]:
     models = list_models(user)
     if models:
-        sel = st.selectbox('Your Models', models)
-        if st.button('Load'):
+        sel = st.selectbox('Your Models', models, key='load')
+        if st.button('Load', key='load_btn'):
             data = json.loads((Path('models')/user/f'{sel}.json').read_text())
             df   = simulate(**{**data, 'historical': data['mode']=='Historical'})
             st.dataframe(df)
