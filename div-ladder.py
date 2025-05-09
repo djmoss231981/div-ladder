@@ -81,7 +81,7 @@ with tab1:
             holdings.append(shares)
 
         periods = st.number_input("Number of Years to Simulate", min_value=1, value=5)
-        reinvest_freq = st.selectbox("Dividend Reinvestment Frequency", ['Monthly', 'Quarterly', 'Annually'])
+        reinvest_freq = st.selectbox("Dividend Reinvestment Frequency", ['Weekly', 'Bi-Weekly', 'Monthly', 'Quarterly', 'Semi-Annually', 'Annually'])
         allow_fractional = st.checkbox("Allow Fractional Shares?", value=True)
         save_option = st.checkbox("Save this model")
 
