@@ -43,13 +43,16 @@ def list_public_models():
             if d.is_dir():
                 for f in d.glob("*.json"):
                     md = json.loads(f.read_text())
-                    if md.get("public"): out.append((d.name, f.stem, md))
+                    if md.get("public"):
+                        out.append((d.name, f.stem, md))
     return out
 
 # --- DATA HELPERS ---
 def get_price(ticker):
-    try: return yf.Ticker(ticker).history(period="1d")["Close"].iloc[-1]
-    except: return 0.0
+    try:
+        return yf.Ticker(ticker).history(period="1d")["Close"].iloc[-1]
+    except:
+        return 0.0
 
 def get_dividend(ticker):
     try:
@@ -63,7 +66,8 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
     freq_map = {'Weekly':52,'Monthly':12,'Quarterly':4,'Semi-Annual':2,'Annually':1}
     date_freq = {'Weekly':'W','Monthly':'M','Quarterly':'Q','Semi-Annual':'2Q','Annually':'A'}[freq]
     steps = periods * freq_map[freq]
-    dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=date_freq) if historical else range(steps)
+    dates = (pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=date_freq)
+             if historical else range(steps))
     current = dict(zip(tickers, holdings))
     records = []
 
@@ -71,32 +75,30 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
         row = {}; new = current.copy()
         for i, t in enumerate(tickers):
             s = current[t]
-            # price determination
+            # determine price
             if historical:
                 hist = yf.Ticker(t).history(start=idx, end=idx+pd.Timedelta(days=5))
                 price = hist["Close"].mean() if not hist.empty else get_price(t)
-                # dividend as of idx
-                dvs = yf.Ticker(t).dividends
-                dvs = dvs[dvs.index <= idx]
-                per_share = dvs.iloc[-1] if not dvs.empty else 0.0
+                dv_series = yf.Ticker(t).dividends
+                dv_series = dv_series[dv_series.index <= idx] if not dv_series.empty else pd.Series()
+                per_share = dv_series.iloc[-1] if not dv_series.empty else 0.0
             else:
                 price = get_price(t)
-                per_share = get_dividend(t)/freq_map[freq]
+                per_share = get_dividend(t) / freq_map[freq]
 
-            # calculate earned, cascade, reinvest
             earned = s * per_share
-            pct = cascade[i]/100 if i < len(cascade) else 0
+            pct = cascade[i] / 100 if i < len(cascade) else 0
             cascaded = earned * pct
             reinv = earned - cascaded
 
-            # override for last security
+            # last security override
             if i == len(tickers)-1:
                 if last_handling == "Reinvest in itself":
                     reinv, cascaded = earned, 0.0
-                else:  # distribute equally
+                else:
                     reinv, cascaded = 0.0, earned
 
-            # buy self
+            # buy own shares
             bought_self = reinv/price if frac else reinv//price
             new[t] += bought_self
 
@@ -105,13 +107,13 @@ def _simulate(tickers, holdings, periods, freq, cascade, frac, last_handling, hi
                 np = get_price(tickers[i+1])
                 bought_next = cascaded/np if frac else cascaded//np
                 new[tickers[i+1]] += bought_next
-            elif last_handling=="Distribute equally across chain":
-                part = cascaded/len(tickers)
+            elif last_handling == "Distribute equally across chain":
+                part = cascaded / len(tickers)
                 for tk in tickers:
                     tp = get_price(tk)
                     new[tk] += (part/tp if frac else part//tp)
 
-            # record metrics
+            # record
             row[f"{t}_Holdings"] = s
             row[f"{t}_Cost"]     = s * price
             row[f"{t}_Earned"]   = earned
@@ -137,14 +139,15 @@ if "user" not in st.session_state:
         u = st.text_input("Username"); p = st.text_input("Password", type="password")
         if st.button(mode):
             us = load_users()
-            if mode=="Register":
-                if u in us: st.error("Username exists.")
+            if mode == "Register":
+                if u in us:
+                    st.error("Username exists.")
                 else:
                     us[u] = {"password":hash_password(p)}
                     save_users(us)
-                    st.success("Registered—please log in.")
+                    st.success("Registered — please log in.")
             else:
-                if authenticate(u,p):
+                if authenticate(u, p):
                     st.session_state["user"] = u
                     st.success(f"Welcome, {u}!")
                 else:
@@ -159,56 +162,67 @@ tab1, tab2 = st.tabs(["Create Simulation", "Load Model"])
 
 with tab1:
     with st.form("form"):
+        # Model definition
         name = st.text_input("Model Name")
         n   = st.slider("Number of Securities", 2, 6, 3)
         tickers, shares = [], []
+
         for i in range(n):
             c1, c2 = st.columns(2)
             with c1:
                 t = st.text_input(f"Ticker {i+1}", key=f"t{i}").upper()
-                # --- NEW: Dividend history lookup ---
                 if t:
+                    # Dividend history lookup
                     hist = yf.Ticker(t).dividends
-                    one_year_ago = pd.Timestamp.today() - pd.DateOffset(years=1)
-                    recent = hist[hist.index >= one_year_ago]
-                    if not recent.empty:
-                        last4 = recent.sort_index(ascending=False).head(4)
-                        freq_cnt = len(last4)
-                        avg_payout = last4.mean()
-                        st.markdown(f"• **Payouts in last year**: {freq_cnt} (up to 4)")
-                        st.markdown(f"• **Average Payout**: ${avg_payout:.4f}")
+                    one_yr_ago = pd.Timestamp.today() - pd.DateOffset(years=1)
+                    if not hist.empty:
+                        recent = hist[hist.index >= one_yr_ago]
+                        if not recent.empty:
+                            last4 = recent.sort_index(ascending=False).head(4)
+                            freq_cnt = len(last4)
+                            avg_payout = last4.mean()
+                            st.markdown(f"• **Payouts (last year)**: {freq_cnt} (up to 4)")
+                            st.markdown(f"• **Average Payout**: ${avg_payout:.4f}")
+                        else:
+                            st.warning("No payouts found, enter a new ticker")
                     else:
                         st.warning("No payouts found, enter a new ticker")
             with c2:
                 s = st.number_input(f"Shares {i+1}", value=100.0, min_value=0.0, key=f"s{i}")
-            tickers.append(t)
-            shares.append(s)
+            tickers.append(t); shares.append(s)
 
+        # Cascade matrix
         st.subheader("Cascade % Between Pairs")
         cascade = []
         for i in range(n-1):
             pct = st.slider(f"{tickers[i]}→{tickers[i+1]}", 0, 100, 100, step=5, key=f"c{i}")
             cascade.append(pct)
 
+        # Last security handling
         last_hand = st.selectbox(
             "Last Security Dividend Handling",
-            ["Reinvest in itself","Distribute equally across chain"]
+            ["Reinvest in itself", "Distribute equally across chain"]
         )
 
-        freq  = st.selectbox("Frequency", ['Weekly','Monthly','Quarterly','Semi-Annual','Annually'])
-        yrs   = st.number_input("Years to Simulate", 1, 30, 5)
-        frac  = st.checkbox("Allow Fractional Shares", True)
-        pub   = st.checkbox("Make Model Public")
-        mode  = st.radio("Mode", ["Forward Projection","Historical Backtest"])
-        go    = st.form_submit_button("Run")
+        # Simulation settings
+        freq = st.selectbox("Frequency", 
+                            ['Weekly','Monthly','Quarterly','Semi-Annual','Annually'])
+        yrs  = st.number_input("Years to Simulate", 1, 30, 5)
+        frac = st.checkbox("Allow Fractional Shares", True)
+        pub  = st.checkbox("Make Model Public")
+        mode = st.radio("Mode", ["Forward Projection","Historical Backtest"])
 
+        # **Submit button**
+        go = st.form_submit_button("Run Simulation")
+
+    # **Ensure this runs only after submit**
     if go:
         simulator = simulate_forward if mode=="Forward Projection" else simulate_backtest
         df = simulator(
-            tickers, shares, yrs, freq, cascade,
-            frac, last_handling=last_hand
+            tickers, shares, yrs, freq, cascade, frac, last_handling=last_hand
         )
 
+        # Results
         st.subheader("Simulation Results")
         st.dataframe(df)
 
@@ -220,10 +234,14 @@ with tab1:
 
         if name:
             save_user_model(user, name, {
-                "tickers": tickers, "holdings": shares,
-                "periods": yrs, "reinvest_freq": freq,
-                "cascade_matrix": cascade, "allow_fractional": frac,
-                "mode": mode, "last_handling": last_hand
+                "tickers": tickers,
+                "holdings": shares,
+                "periods": yrs,
+                "reinvest_freq": freq,
+                "cascade_matrix": cascade,
+                "allow_fractional": frac,
+                "mode": mode,
+                "last_handling": last_hand
             }, public=pub)
             st.success(f"Model '{name}' saved.")
 
@@ -234,8 +252,9 @@ with tab2:
         if st.button("Load"):
             mf = Path("models")/user/f"{sel}.json"
             data = json.loads(mf.read_text())
-            simulator = simulate_forward if data["mode"]=="Forward Projection" else simulate_backtest
-            df = simulator(
+            sim = (simulate_forward if data["mode"]=="Forward Projection"
+                   else simulate_backtest)
+            df = sim(
                 data["tickers"], data["holdings"], data["periods"],
                 data["reinvest_freq"], data["cascade_matrix"],
                 data["allow_fractional"], last_handling=data["last_handling"]
