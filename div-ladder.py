@@ -212,7 +212,7 @@ with tabs[0]:
                 key=f"casc_{i}"
             )
             for i in range(len(ticks)-1)
-        ]"{ticks[i]}→{ticks[i+1]}",0,100,100,5,key=f"casc_{i}") for i in range(n-1)]
+        ]
         last_hand  = st.selectbox("Last Handling",["Reinvest in itself","Distribute equally across chain"])
         freq       = st.selectbox("Frequency",["Weekly","Monthly","Quarterly","Semi-Annual","Annually"])
         years      = st.number_input("Years",1,30,5)
