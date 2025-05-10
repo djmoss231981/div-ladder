@@ -189,8 +189,8 @@ with tabs[0]:
                     # Dividend history
                     hist_divs = yf.Ticker(t).dividends
                         # Strip timezone for comparison
-                        if hist_divs.index.tz is not None:
-                            hist_divs.index = hist_divs.index.tz_localize(None)
+                    if hist_divs.index.tz is not None:
+                       hist_divs.index = hist_divs.index.tz_localize(None)
                     if not hist_divs.empty:
                         last_date = hist_divs.index[-1].date()
                         last_amt  = hist_divs.iloc[-1]
