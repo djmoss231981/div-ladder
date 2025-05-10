@@ -180,9 +180,9 @@ with tabs[0]:
     with st.form("create"):
         name      = st.text_input("Model Name")
         n         = st.slider("Securities", 2, 6, 3)
-        ticks     = [st.text_input(f"Ticker {i+1}") for i in range(n)]
-        shares    = [st.number_input(f"Shares {i+1}", 100.0) for i in range(n)]
-        cascade   = [st.slider(f"{ticks[i]}→{ticks[i+1]}", 0, 100, 100, 5) for i in range(n-1)]
+        ticks     = [st.text_input(f"Ticker {i+1}", key=f"tick_{i}") for i in range(n)]
+        shares    = [st.number_input(f"Shares {i+1}", 100.0, key=f"share_{i}") for i in range(n)]
+        cascade   = [st.slider(f"{ticks[i]}→{ticks[i+1]}", 0, 100, 100, 5, key=f"cascade_{i}") for i in range(n-1)]
         last_hand = st.selectbox("Last Dividend Handling", ["Reinvest in itself", "Distribute equally across chain"])
         freq      = st.selectbox("Frequency", ["Weekly", "Monthly", "Quarterly", "Semi-Annual", "Annually"])
         years     = st.number_input("Years", 1, 30, 5)
