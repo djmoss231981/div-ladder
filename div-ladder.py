@@ -205,7 +205,14 @@ with tabs[0]:
                 s = st.number_input(f"Shares {i+1}", 100.0, key=f"share_{i}")
             ticks.append(t)
             shares.append(s)
-        cascade = [st.slider(f"{ticks[i]}→{ticks[i+1]}", 0, 100, 100, 5, key=f"casc_{i}") for i in range(n-1)](f"{ticks[i]}→{ticks[i+1]}",0,100,100,5,key=f"casc_{i}") for i in range(n-1)]
+        cascade = [
+            st.slider(
+                f"{ticks[i]}→{ticks[i+1]}",
+                0, 100, 100, 5,
+                key=f"casc_{i}"
+            )
+            for i in range(len(ticks)-1)
+        ]"{ticks[i]}→{ticks[i+1]}",0,100,100,5,key=f"casc_{i}") for i in range(n-1)]
         last_hand  = st.selectbox("Last Handling",["Reinvest in itself","Distribute equally across chain"])
         freq       = st.selectbox("Frequency",["Weekly","Monthly","Quarterly","Semi-Annual","Annually"])
         years      = st.number_input("Years",1,30,5)
