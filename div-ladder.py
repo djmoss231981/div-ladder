@@ -73,7 +73,7 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
     if historical:
         df_dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=date_freq_map[freq])
         index = df_dates
-n    else:
+    else:
         index = range(steps)
 
     holdings = dict(zip(tickers, shares))
