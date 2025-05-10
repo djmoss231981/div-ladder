@@ -204,8 +204,7 @@ with tabs[0]:
                     st.markdown(f"**Average Payout:** ${avg_payout:.4f}")
                 else:
                     st.warning("No dividend history found")
-            else:
-                        st.warning("No dividend history found")
+            
             with col2:
                 s = st.number_input(f"Shares {i+1}", 100.0, key=f"share_{i}")
             ticks.append(t)
