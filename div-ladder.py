@@ -88,7 +88,7 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
     length = len(prices[tickers[0]])
     idxs = (pd.Series(range(steps)) * length // steps).clip(0, length-1).astype(int)
 
-    for idx in range(steps):(steps):
+    for idx in range(steps):
         row = {}
         pos = idxs.iat[idx]
         for i, t in enumerate(tickers):
