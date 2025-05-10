@@ -79,16 +79,16 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
     else:
         index = range(steps)
 
-    holdings = dict(zip(tickers, shares))(zip(tickers, shares))
+    holdings = dict(zip(tickers, shares))
     cum_div  = dict.fromkeys(tickers, 0.0)
     cum_cap  = dict.fromkeys(tickers, 0.0)
     last_vals= {t: shares[i] * prices[t].iloc[-1] for i,t in enumerate(tickers)}
     records  = []
-    # precompute index positions
+    # precompute index positions (ensuring positions map into available data)
     length = len(prices[tickers[0]])
-    idxs = (pd.Series(range(steps)) * length // steps).astype(int)
+    idxs = (pd.Series(range(steps)) * length // steps).clip(0, length-1).astype(int)
 
-    for idx in range(steps):
+    for idx in range(steps):(steps):
         row = {}
         pos = idxs.iat[idx]
         for i, t in enumerate(tickers):
