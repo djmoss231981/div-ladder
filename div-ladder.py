@@ -10,6 +10,10 @@ st.set_page_config(page_title="div-ladder", layout="wide")
 # --- CACHED DATA FETCH ---
 @st.cache_data
 def load_ticker_data(tickers):
+    """
+    Fetch price and dividend data for each ticker and cache the result.
+    Returns a dict with 'prices' and 'divs' maps.
+    """
     prices = {}
     divs   = {}
     for t in tickers:
@@ -18,7 +22,7 @@ def load_ticker_data(tickers):
         dv   = tk.dividends.resample('D').ffill()
         prices[t] = hist
         divs[t]   = dv
-    return prices, divs
+    return { 'prices': prices, 'divs': divs }
 
 # --- AUTH UTILITIES ---
 def hash_password(pwd): return hashlib.sha256(pwd.encode()).hexdigest()
@@ -59,27 +63,34 @@ def list_public_models():
 # --- SIMULATION CORE ---
 def simulate(tickers, shares, years, freq, cascade, frac, last_handling, historical=False):
     freq_map = {'Weekly':52,'Monthly':12,'Quarterly':4,'Semi-Annual':2,'Annually':1}
+    date_freq_map = {'Weekly':'W','Monthly':'M','Quarterly':'Q','Semi-Annual':'2Q','Annually':'A'}
     steps = int(years * freq_map[freq])
-    prices, divs = load_ticker_data(tickers)
+    data = load_ticker_data(tickers)
+    prices = data['prices']
+    divs = data['divs']
 
+    # determine dates or steps
     if historical:
-        dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=freq[0])
-    else:
-        dates = range(steps)
+        df_dates = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=date_freq_map[freq])
+        index = df_dates
+n    else:
+        index = range(steps)
 
     holdings = dict(zip(tickers, shares))
     cum_div  = dict.fromkeys(tickers, 0.0)
     cum_cap  = dict.fromkeys(tickers, 0.0)
     last_vals= {t: shares[i] * prices[t].iloc[-1] for i,t in enumerate(tickers)}
     records  = []
-    idxs     = (pd.Series(range(steps)) * len(prices[tickers[0]]) // steps).astype(int)
+    # precompute index positions
+    length = len(prices[tickers[0]])
+    idxs = (pd.Series(range(steps)) * length // steps).astype(int)
 
     for idx in range(steps):
         row = {}
         pos = idxs.iat[idx]
         for i, t in enumerate(tickers):
             price    = prices[t].iat[pos]
-            dividend = (divs[t].iat[pos] if historical else divs[t].iat[-1] / freq_map[freq])
+            dividend = divs[t].iat[pos] if historical else divs[t].iat[-1] / freq_map[freq]
 
             s = holdings[t]
             earned = s * dividend
@@ -117,9 +128,10 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
             })
         records.append(row)
 
-    df = pd.DataFrame(records, index=dates)
+    df = pd.DataFrame(records, index=index)
     df.index.name = 'Date' if historical else 'Step'
 
+    # portfolio aggregates
     df['Total MarketValue']    = df.filter(like='_MarketValue').sum(axis=1)
     df['Total CumulativeDivs'] = df.filter(like='_CumulativeDivs').sum(axis=1)
     df['Total CapGain']        = df.filter(like='_CapGain').sum(axis=1)
