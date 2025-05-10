@@ -69,7 +69,7 @@ def simulate(tickers, shares, years, freq, cascade, frac, last_handling, histori
     prices = data['prices']
     divs = data['divs']
 
-        # determine dates or steps
+    # determine dates or steps
     if historical:
         index = pd.date_range(
             end=pd.Timestamp.today(),
