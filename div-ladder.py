@@ -189,15 +189,12 @@ with tabs[0]:
                     st.markdown(f"**Current Price:** ${price:.2f}")
                 # Dividend history
                     hist_divs = yf.Ticker(t).dividends
-                # Remove timezone for comparison
                     if hasattr(hist_divs.index, 'tz') and hist_divs.index.tz is not None:
                         hist_divs.index = hist_divs.index.tz_localize(None)
                     if not hist_divs.empty:
                         last_date = hist_divs.index[-1].date()
                         last_amt  = hist_divs.iloc[-1]
                         st.markdown(f"**Last Dividend:** ${last_amt:.4f} on {last_date}")
-
-                        # Quarterly frequency & average payout
                         one_year = hist_divs[hist_divs.index >= pd.Timestamp.today() - pd.DateOffset(years=1)]
                         last4 = one_year.sort_index(ascending=False).head(4)
                         freq_cnt = len(last4)
