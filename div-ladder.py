@@ -183,13 +183,13 @@ with tabs[0]:
             with col1:
                 t = st.text_input(f"Ticker {i+1}", key=f"tick_{i}").upper()
                 if t:
-                    # Show current price
+                # Show current price
                     prices_data, _ = load_ticker_data([t])
                     price = prices_data[t].iloc[-1]
                     st.markdown(f"**Current Price:** ${price:.2f}")
-                    # Dividend history
+                # Dividend history
                     hist_divs = yf.Ticker(t).dividends
-                    # Remove timezone for comparison
+                # Remove timezone for comparison
                     if hasattr(hist_divs.index, 'tz') and hist_divs.index.tz is not None:
                         hist_divs.index = hist_divs.index.tz_localize(None)
                     if not hist_divs.empty:
