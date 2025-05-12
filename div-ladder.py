@@ -160,17 +160,17 @@ def simulate(
 # --- 'UI: Authentication' ---
 if "user" not in st.session_state:
     with st.expander("Login/Register"):
-        mode     = st.radio("Mode", ["Login", "Register"])
+        mode     = st.radio("Mode",["Login","Register"])
         username = st.text_input("Username")
-        pwd      = st.text_input("Password", type="password")
+        pwd      = st.text_input("Password",type="password")
         if st.button(mode):
             users = load_users()
-            if mode == "Register":
-                users[username] = {"password": hash_password(pwd)}
+            if mode=="Register":
+                users[username] = {"password":hash_password(pwd)}
                 save_users(users)
                 st.success("Registered")
             else:
-                if authenticate(username, pwd):
+                if authenticate(username,pwd):
                     st.session_state["user"] = username
                     st.success(f"Welcome {username}")
                 else:
@@ -181,13 +181,13 @@ if "user" not in st.session_state:
 user = st.session_state["user"]
 st.title("div-ladder")
 
-tabs = st.tabs(["Create", "Load", "Public"])
+tabs = st.tabs(["Create","Load","Public"])
 
 # --- 'UI: Create Tab' ---
 with tabs[0]:
-    with st.form("create"):
+    with st.form("create"): 
         name      = st.text_input("Model Name")
-        n         = st.slider("Securities", 2, 6, 3)
+        n         = st.slider("Securities",2,6,3)
         ticks     = []
         shares    = []
         for i in range(n):
@@ -226,37 +226,32 @@ with tabs[0]:
             )
             for i in range(len(ticks)-1)
         ]
-        last_hand = st.selectbox("Last Handling", ["Reinvest in itself", "Distribute equally across chain"])
-        freq      = st.selectbox("Frequency", ["Weekly", "Monthly", "Quarterly", "Semi-Annual", "Annually"])
-        years     = st.number_input("Years", 1, 30, 5)
-        frac      = st.checkbox("Allow Fractional Shares", True)
+        last_hand = st.selectbox("Last Handling",["Reinvest in itself","Distribute equally across chain"])
+        freq      = st.selectbox("Frequency",["Weekly","Monthly","Quarterly","Semi-Annual","Annually"])
+        years     = st.number_input("Years",1,30,5)
+        frac      = st.checkbox("Allow Fractional Shares",True)
         pub       = st.checkbox("Make Model Public")
-        mode_sel  = st.radio("Mode", ["Forward", "Historical"])
+        mode_sel  = st.radio("Mode",["Forward","Historical"])
         run       = st.form_submit_button("Run Simulation")
 
     if run:
-        df = simulate(ticks, shares, years, freq, cascade, frac, last_hand, mode_sel == "Historical")
+        df = simulate(ticks,shares,years,freq,cascade,frac,last_hand,mode_sel=="Historical")
         st.dataframe(df)
-        st.area_chart(df[["Total MarketValue", "Total CumulativeDivs"]])
+        st.area_chart(df[["Total MarketValue","Total CumulativeDivs"]])
         st.line_chart(df["Total PortfolioValue"])
         for t in ticks:
             with st.expander(t):
                 st.dataframe(df.filter(like=f"{t}_"))
-        save_model(
-            user, name,
-            {"tickers": ticks, "holdings": shares, "years": years, "freq": freq,
-             "cascade": cascade, "frac": frac, "last_handling": last_hand, "mode": mode_sel},
-            pub
-        )
+        save_model(user,name,{"tickers":ticks,"holdings":shares,"years":years,"freq":freq,"cascade":cascade,"frac":frac,"last_handling":last_hand,"mode":mode_sel},pub)
 
 # --- 'UI: Load Tab' ---
 with tabs[1]:
     models = list_models(user)
     if models:
-        sel = st.selectbox("Your Models", models)
+        sel = st.selectbox("Your Models",models)
         if st.button("Load Model"):
             data = json.loads((Path("models")/user/f"{sel}.json").read_text())
-            df   = simulate(**{**data, "historical": data["mode"] == "Historical"})
+            df = simulate(**{**data,"historical":data["mode"]=="Historical"})
             st.dataframe(df)
             for t in data["tickers"]:
                 with st.expander(t):
@@ -268,7 +263,7 @@ with tabs[1]:
 with tabs[2]:
     pubs = list_public_models()
     if pubs:
-        for u, name, m in pubs:
+        for u,name,m in pubs:
             st.markdown(f"**{u}/{name}**")
             st.json(m)
     else:
