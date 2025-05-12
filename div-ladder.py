@@ -189,7 +189,6 @@ with tabs[0]:
                     st.markdown(f"**Current Price:** ${price:.2f}")
 
                     # Dividend history
-                                                            # Dividend history
                     hist_divs = yf.Ticker(t).dividends
                     # Remove timezone for comparison
                     if hasattr(hist_divs.index, 'tz') and hist_divs.index.tz is not None:
