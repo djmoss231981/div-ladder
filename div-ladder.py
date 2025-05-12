@@ -187,7 +187,6 @@ with tabs[0]:
                     prices_data, _ = load_ticker_data([t])
                     price = prices_data[t].iloc[-1]
                     st.markdown(f"**Current Price:** ${price:.2f}")
-
                     # Dividend history
                     hist_divs = yf.Ticker(t).dividends
                     # Remove timezone for comparison
