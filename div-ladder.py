@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 import hashlib
 
-# --- Page Configuration ---
+# --- 'Page Configuration' ---
 st.set_page_config(page_title="div-ladder", layout="wide")
 
-# --- Cached Data Fetch ---
+# --- 'Cached Data Fetch' ---
 @st.cache_data
 def load_ticker_data(tickers):
     """
@@ -24,7 +24,7 @@ def load_ticker_data(tickers):
         divs[t]   = dv
     return prices, divs
 
-# --- Authentication Utilities ---
+# --- 'Authentication Utilities' ---
 def hash_password(pwd: str) -> str:
     return hashlib.sha256(pwd.encode()).hexdigest()
 
@@ -40,7 +40,7 @@ def save_users(users: dict) -> None:
 def authenticate(user: str, pwd: str) -> bool:
     return load_users().get(user, {}).get("password") == hash_password(pwd)
 
-# --- Model Storage ---
+# --- 'Model Storage' ---
 def save_model(user: str, name: str, model: dict, public: bool=False) -> None:
     folder = Path("models") / user
     folder.mkdir(parents=True, exist_ok=True)
@@ -63,7 +63,7 @@ def list_public_models() -> list:
                         pubs.append((udir.name, f.stem, m))
     return pubs
 
-# --- Simulation Core ---
+# --- 'Simulation Core' ---
 def simulate(
     tickers: list, shares: list, years: int, freq: str,
     cascade: list, frac: bool, last_handling: str,
@@ -78,16 +78,19 @@ def simulate(
     steps = int(years * freq_map[freq])
     prices, divs = load_ticker_data(tickers)
 
+    # --- 'Index Determination' ---
     if historical:
         index = pd.date_range(end=pd.Timestamp.today(), periods=steps, freq=date_freq[freq])
     else:
         index = range(steps)
 
+    # --- 'Initialize State' ---
     holdings = dict(zip(tickers, shares))
     cum_div   = {t:0.0 for t in tickers}
     cum_cap   = {t:0.0 for t in tickers}
     last_vals = {t:shares[i]*prices[t].iloc[-1] for i,t in enumerate(tickers)}
 
+    # --- 'Compute Positions' ---
     length = len(prices[tickers[0]])
     idxs   = (pd.Series(range(steps))*length//steps).clip(0,length-1).astype(int)
 
@@ -95,19 +98,23 @@ def simulate(
     for step in range(steps):
         pos = idxs.iat[step]
         row = {}
+
         for i, t in enumerate(tickers):
+            # --- 'Price & Dividend' ---
             price    = prices[t].iat[pos]
             dividend = divs[t].iat[pos] if historical else divs[t].iat[-1]/freq_map[freq]
-            s        = holdings[t]
 
+            s      = holdings[t]
             earned = s * dividend
             cum_div[t] += earned
 
+            # --- 'Capital Gains' ---
             mv   = s * price
             gain = mv - last_vals[t]
             cum_cap[t] += gain
             last_vals[t] = mv
 
+            # --- 'Cascade & Reinvest' ---
             pct   = cascade[i]/100 if i < len(cascade) else 0
             reinv = earned*(1-pct)
             casc  = earned*pct
@@ -123,6 +130,7 @@ def simulate(
                 for tk in tickers:
                     holdings[tk] += part/prices[tk].iat[pos]
 
+            # --- 'Record Metrics' ---
             row.update({
                 f"{t}_Holdings":       s,
                 f"{t}_Price":          price,
@@ -134,11 +142,14 @@ def simulate(
                 f"{t}_Cascaded":       casc,
                 f"{t}_CumulativeDivs": cum_div[t],
             })
+
         records.append(row)
 
+    # --- 'Build DataFrame' ---
     df = pd.DataFrame(records, index=index)
     df.index.name = "Date" if historical else "Step"
 
+    # --- 'Portfolio Aggregates' ---
     df["Total MarketValue"]    = df.filter(like="_MarketValue").sum(axis=1)
     df["Total CumulativeDivs"] = df.filter(like="_CumulativeDivs").sum(axis=1)
     df["Total CapGain"]        = df.filter(like="_CapGain").sum(axis=1)
@@ -147,7 +158,7 @@ def simulate(
 
     return df
 
-# --- UI ---
+# --- 'UI: Authentication' ---
 if "user" not in st.session_state:
     with st.expander("Login/Register"):
         mode     = st.radio("Mode",["Login","Register"])
@@ -167,51 +178,20 @@ if "user" not in st.session_state:
                     st.error("Login failed")
     st.stop()
 
+# --- 'UI: Main' ---
 user = st.session_state["user"]
 st.title("div-ladder")
 
 tabs = st.tabs(["Create","Load","Public"])
 
+# --- 'UI: Create Tab' ---
 with tabs[0]:
     with st.form("create"): 
         name       = st.text_input("Model Name")
         n          = st.slider("Securities",2,6,3)
-        ticks = []
-        shares = []
-        for i in range(n):
-            col1, col2 = st.columns(2)
-            with col1:
-                t = st.text_input(f"Ticker {i+1}", key=f"tick_{i}").upper()
-                if t:
-                # Show current price
-                    prices_data, _ = load_ticker_data([t])
-                    price = prices_data[t].iloc[-1]
-                    st.markdown(f"**Current Price:** ${price:.2f}")
-                # Dividend history
-                    hist_divs = yf.Ticker(t).dividends
-                    if hasattr(hist_divs.index, 'tz') and hist_divs.index.tz is not None:
-                        hist_divs.index = hist_divs.index.tz_localize(None)
-                    if not hist_divs.empty:
-                        last_date = hist_divs.index[-1].date()
-                        last_amt  = hist_divs.iloc[-1]
-                        st.markdown(f"**Last Dividend:** ${last_amt:.4f} on {last_date}")
-                        one_year = hist_divs[hist_divs.index >= pd.Timestamp.today() - pd.DateOffset(years=1)]
-                        last4 = one_year.sort_index(ascending=False).head(4)
-                        freq_cnt = len(last4)
-                        avg_payout = last4.mean() if freq_cnt > 0 else 0.0
-                        st.markdown(f"**Payouts (last year):** {freq_cnt} (up to 4)")
-                        st.markdown(f"**Average Payout:** ${avg_payout:.4f}")
-                    else:
-                        st.warning("No dividend history found")(t)
-            shares.append(s)
-        cascade = [
-            st.slider(
-                f"{ticks[i]}→{ticks[i+1]}",
-                0, 100, 100, 5,
-                key=f"casc_{i}"
-            )
-            for i in range(len(ticks)-1)
-        ]
+        ticks      = [st.text_input(f"Ticker {i+1}",key=f"tick_{i}") for i in range(n)]
+        shares     = [st.number_input(f"Shares {i+1}",100.0,key=f"share_{i}") for i in range(n)]
+        cascade    = [st.slider(f"{ticks[i]}→{ticks[i+1]}",0,100,100,5,key=f"casc_{i}") for i in range(n-1)]
         last_hand  = st.selectbox("Last Handling",["Reinvest in itself","Distribute equally across chain"])
         freq       = st.selectbox("Frequency",["Weekly","Monthly","Quarterly","Semi-Annual","Annually"])
         years      = st.number_input("Years",1,30,5)
@@ -228,8 +208,9 @@ with tabs[0]:
         for t in ticks:
             with st.expander(t):
                 st.dataframe(df.filter(like=f"{t}_"))
-        save_model(user,name,{"tickers":ticks,"holdings":shares,"years":years,"freq":freq,"cascade":cascade,"frac":frac,"last_hand":last_hand,"mode":mode_sel},pub)
+        save_model(user,name,{"tickers":ticks,"holdings":shares,"years":years,"freq":freq,"cascade":cascade,"frac":frac,"last_handling":last_hand,"mode":mode_sel},pub)
 
+# --- 'UI: Load Tab' ---
 with tabs[1]:
     models = list_models(user)
     if models:
@@ -244,6 +225,7 @@ with tabs[1]:
     else:
         st.info("No models saved")
 
+# --- 'UI: Public Tab' ---
 with tabs[2]:
     pubs = list_public_models()
     if pubs:
