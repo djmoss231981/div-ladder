@@ -125,6 +125,13 @@ def simulate(
     records = []
     for step in range(steps):
         raw_pos = idxs.iat[step]
+        row = {}
+
+        for i, t in enumerate(tickers):
+            # Ensure position within this ticker's series length
+            pos = min(raw_pos, len(prices[t]) - 1)
+
+            # --- 'Price & Dividend' ---[step]
             # Ensure position within this ticker's series length
             pos = min(raw_pos, len(prices[t]) - 1)
         row = {}
