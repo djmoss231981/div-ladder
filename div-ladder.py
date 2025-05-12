@@ -193,11 +193,7 @@ def simulate(
     df["Total CumulativeDivs"] = df.filter(like="_CumulativeDivs").sum(axis=1)
     df["Total CapGain"]        = df.filter(like="_CapGain").sum(axis=1)
     df["Total CumulativeCap"]  = df.filter(like="_CumulativeCap").sum(axis=1)
-    df["Total PortfolioValue"] = (
-        df["Total MarketValue"]
-        + df["Total CumulativeDivs"]
-    )
-
+    df["Total PortfolioValue"] = (df["Total MarketValue"] + df["Total CumulativeDivs"])
     return df
 
 # --- 'UI: Authentication' ---
