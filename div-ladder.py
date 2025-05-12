@@ -184,29 +184,29 @@ with tabs[0]:
                 t = st.text_input(f"Ticker {i+1}", key=f"tick_{i}").upper()
                 if t:
                     # Show current price
-                    price = load_ticker_data([t])[0][t].iloc[-1]
+                    prices_data, _ = load_ticker_data([t])
+                    price = prices_data[t].iloc[-1]
                     st.markdown(f"**Current Price:** ${price:.2f}")
+
                     # Dividend history
                     hist_divs = yf.Ticker(t).dividends
-                # Strip timezone-naive mismatch
-                if hasattr(hist_divs.index, 'tz') and hist_divs.index.tz is not None:
-                    hist_divs.index = hist_divs.index.tz_localize(None)
-                if not hist_divs.empty:
-                    last_date = hist_divs.index[-1].date()
-                    last_amt  = hist_divs.iloc[-1]
-                    st.markdown(f"**Last Dividend:** ${last_amt:.4f} on {last_date}")
-                    # Quarterly frequency & average payout
-                    one_year = hist_divs[hist_divs.index >= pd.Timestamp.today() - pd.DateOffset(years=1)]
-                    last4 = one_year.sort_index(ascending=False).head(4)
-                    freq_cnt = len(last4)
-                    avg_payout = last4.mean() if freq_cnt > 0 else 0
-                    st.markdown(f"**Payouts (last year):** {freq_cnt} (up to 4)")
-                    st.markdown(f"**Average Payout:** ${avg_payout:.4f}")
-                else:
-                    st.warning("No dividend history found")
-            with col2:
-                s = st.number_input(f"Shares {i+1}", 100.0, key=f"share_{i}")
-            ticks.append(t)
+                    # Remove timezone for comparison
+                    if hasattr(hist_divs.index, 'tz') and hist_divs.index.tz is not None:
+                        hist_divs.index = hist_divs.index.tz_localize(None)
+                    if not hist_divs.empty:
+                        last_date = hist_divs.index[-1].date()
+                        last_amt  = hist_divs.iloc[-1]
+                        st.markdown(f"**Last Dividend:** ${last_amt:.4f} on {last_date}")
+
+                        # Quarterly frequency & average payout
+                        one_year = hist_divs[hist_divs.index >= pd.Timestamp.today() - pd.DateOffset(years=1)]
+                        last4 = one_year.sort_index(ascending=False).head(4)
+                        freq_cnt = len(last4)
+                        avg_payout = last4.mean() if freq_cnt > 0 else 0.0
+                        st.markdown(f"**Payouts (last year):** {freq_cnt} (up to 4)")
+                        st.markdown(f"**Average Payout:** ${avg_payout:.4f}")
+                    else:
+                        st.warning("No dividend history found")(t)
             shares.append(s)
         cascade = [
             st.slider(
