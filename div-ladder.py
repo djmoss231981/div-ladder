@@ -124,7 +124,9 @@ def simulate(
 
     records = []
     for step in range(steps):
-        pos = idxs.iat[step]
+        raw_pos = idxs.iat[step]
+            # Ensure position within this ticker's series length
+            pos = min(raw_pos, len(prices[t]) - 1)
         row = {}
 
         for i, t in enumerate(tickers):
@@ -193,7 +195,11 @@ def simulate(
     df["Total CumulativeDivs"] = df.filter(like="_CumulativeDivs").sum(axis=1)
     df["Total CapGain"]        = df.filter(like="_CapGain").sum(axis=1)
     df["Total CumulativeCap"]  = df.filter(like="_CumulativeCap").sum(axis=1)
-    df["Total PortfolioValue"] = (df["Total MarketValue"] + df["Total CumulativeDivs"])
+    df["Total PortfolioValue"] = (
+        df["Total MarketValue"]
+        + df["Total CumulativeDivs"]
+    )
+
     return df
 
 # --- 'UI: Authentication' ---
